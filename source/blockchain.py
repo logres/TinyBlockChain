@@ -2,6 +2,8 @@ import json, hashlib, time
 from .my_cryptography import PrivateKey, PublicKey, Address, generate_key_pair
 from collections import namedtuple
 
+from typing import Optional
+
 UnspentTransaction = namedtuple('UnspentTransaction', ['transaction_hash', 'index', 'signature'])
 TransactionOutput = namedtuple('TransactionOutput', ['address', 'amount'])
 
@@ -21,6 +23,10 @@ class Transaction:
             'input': [(unspent_transaction.transaction_hash,unspent_transaction.index,unspent_transaction.signature) for unspent_transaction in self._input],
             'output': [(transaction_output.address, transaction_output.amount) for transaction_output in self._output]
         }
+    
+    def verify(self):
+        # TODO: 验证交易有效性——输入输出值一致
+        return sum([transaction_output.amount for transaction_output in self._output]) == sum([unspent_transaction.amount for unspent_transaction in self._input])
 
     def calculate_hash(self) -> str:
         return hashlib.sha3_256(json.dumps(self.hash_content()).encode()).hexdigest()
@@ -48,14 +54,15 @@ class TransactionPool:
 
     def __init__(self) -> None:
         self._transactions = []
-        self._transaction_mapper = {}
+        # self._transaction_mapper = {}
 
-    def add_transaction(self, transaction: Transaction):
+    def add_transaction(self, transaction: Transaction) -> bool:
         # TODO: 验证交易有效性 检查双花等等
         # if transaction.hash in self._transaction_mapper:
         #     return
         self._transactions.append(transaction)
-        self._transaction_mapper[transaction.hash] = transaction
+        # self._transaction_mapper[transaction.hash] = transaction
+        return True
 
     def get_transactions(self):
         # TODO: 增加数量参数
@@ -79,6 +86,9 @@ class MerkleTree:
         self._tree = self.construct_tree(transactions)
     
     def construct_tree(self,transactions: list[Transaction]):
+        if len(transactions) == 0:
+            _tree = [['0'*64]]
+            return _tree
         _tree = []
         bottom_layer = [transaction.hash for transaction in transactions]
         _tree.append(bottom_layer)
@@ -112,20 +122,47 @@ class Block:
 
     difficulty = 2
 
-    def __init__(self, previous_block_hash: str, transactions: list[Transaction]) -> None:
-        self._hash = None
-        self._previous_block_hash = previous_block_hash # hash
-        self._difficulty = Block.difficulty # hash
-        self._nonce = None # hash
-        self._timestamp = int(round(time.time()*1000)) # hash
+    def __init__(self, previous_block: Optional["Block"] = None, transactions: list[Transaction] = [], is_genius=False) -> None:
+        '''
+        区块头：
+        previous_block_hash: 前一个区块的hash
+        nonce: 随机数
+        difficulty: 难度
+        merkle_root: 交易树的根
+        timestamp: 时间戳
+        index: 区块高度
 
+        区块体：
+        transactions: 交易列表
+        merkle_tree: 默克尔树
 
-        self._merkle_tree = MerkleTree(transactions) # hash.hash
-        self._transactions = transactions
+        方法：
+        mine: 挖矿——计算nonce
+        calculate_hash: 计算区块的hash
+        '''
+        print(previous_block)
+        if not is_genius:
+            self._hash = None
+            self._previous_block_hash = previous_block.hash # hash
+            self._difficulty : int = Block.difficulty # hash
+            self._nonce = None # hash
+            self._timestamp = int(round(time.time()*1000)) # hash
+            self._index = previous_block.index + 1
+            self._merkle_tree = MerkleTree(transactions) # hash.hash
+            self._transactions = transactions
 
-        if not self.mine():
-            raise Exception('Mining Failed')
-        self._hash = self.calculate_hash()
+            if not self.mine():
+                raise Exception('Mining Failed')
+            self._hash = self.calculate_hash()
+        else:
+            self._hash = '0'*64
+            self._previous_block_hash = None
+            self._difficulty : int = Block.difficulty
+            self._nonce = None
+            self._timestamp = int(round(time.time()*1000))
+            self._index = 0
+            self._merkle_tree = MerkleTree(transactions)
+            self._transactions = transactions
 
     def mine(self):
         for nonce in range(1, 2**32):
@@ -139,6 +176,7 @@ class Block:
     def hash_content(self) -> str:
         return {
             'previous_block_hash': self._previous_block_hash,
+            'index': self._index,
             'nonce': self._nonce,
             'difficulty': self._difficulty,
             'merkle_root': self._merkle_tree.root,
@@ -157,6 +195,18 @@ class Block:
         print('timestamp:', self._timestamp)
         print('hash:', self._hash)
         print('-'*20)
+    
+    def verify(self):
+        if self.is_genius():
+            return True
+        if self._hash != self.calculate_hash():
+            return False
+        if not self._hash.startswith('0' * self._difficulty):
+            return False
+        return True
+
+    def is_genius(self):
+        return self._index == 0
 
     @property
     def hash(self):
@@ -165,23 +215,38 @@ class Block:
     @property
     def transactions(self):
         return self._transactions
+    
+    @property
+    def index(self):
+        return self._index
 
 class BlockChain:
     # 区块链，分布式网络的核心
 
     def __init__(self) -> None:
-        self._blocks = [Block('0'*32, [Transaction([], [])])]
-        self._block_mapper = {self._blocks[0].hash: self._blocks[0]}
+        self._blocks = [Block(is_genius=True)]
     
-    def add_block(self, block: Block):
-        self._blocks.append(block)
-        self._block_mapper[block.hash] = block
+    def add_block(self, transactions: list[Transaction]) -> bool:
+        new_block = Block(self.last_block, transactions)
+        self._blocks.append(new_block)
+        return True
     
-    def get_block(self, block_hash: str):
-        return self._block_mapper[block_hash]
+    @property
+    def last_block(self):
+        return self._blocks[-1]
+    
+    def __len__(self):
+        return len(self._blocks)
 
     def show(self):
         for block in self._blocks:
             block.show()
+    
+    def verify_transaction(self, transaction: Transaction):
+        for unspent_transaction in self.unspent_transactions:
+            # tx_hash index signature
+            # tx = xxx(tx_hash)
+            # tx.outputs[index].verify(signature)
+            # I forget how to verify!
 
 
