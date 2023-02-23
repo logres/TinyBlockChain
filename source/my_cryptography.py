@@ -18,12 +18,37 @@ class PublicKey:
     
     def verify(self, message: bytes, signature: bytes) -> bool:
         return self._public_key.verify(signature, message)
+    
+    def public_key_hash(self):
+        # 生成公钥hash
+        public_key_bytes = bytes.fromhex(self.public_key)
+        return hashlib.sha3_256(public_key_bytes).hexdigest()
 
-    def address(self):
+    def to_address(self) -> "Address":
         # 生成地址
-        public_key = self._public_key.to_string()
-        public_key_hash = hashlib.sha3_256(public_key).digest().hex()
-        return Address(public_key_hash[-20:])
+        public_key_hash = self.public_key_hash()
+        public_key_hash_bytes = bytes.fromhex(public_key_hash)
+        checksum = hashlib.sha3_256(public_key_hash_bytes).hexdigest()[:8]
+        return Address('0x' + public_key_hash + checksum)
+
+class Address:
+
+    def __init__(self, address: str) -> None:
+        self._address = address
+
+    @property
+    def address(self) -> str:
+        return self._address
+
+    def to_public_key_hash(self) -> str:
+        # 地址转公钥hash
+        return self._address[2:-8]
+    
+    def is_valid(self) -> bool:
+        # 验证地址是否有效
+        address = self._address[2:]
+        checksum = hashlib.sha3_256(bytes.fromhex(address[:-8])).hexdigest()[:8]
+        return checksum == address[-8:]
 
 
 class PrivateKey:
@@ -45,35 +70,8 @@ class PrivateKey:
         return PublicKey(public_key.to_string().hex())
 
 
-class Address:
-
-    def __init__(self, address: str) -> None:
-        self._address = address
-    
-    @property
-    def address(self) -> str:
-        return self._address
-
-
 def generate_key_pair() -> tuple[PrivateKey, PublicKey]:
     # 生成公钥和私钥
     private_key = ecdsa.SigningKey.generate(curve=ecdsa.SECP256k1)
     public_key = private_key.get_verifying_key()
     return PrivateKey(private_key.to_string().hex()), PublicKey(public_key.to_string().hex())
-
-# def compress_public_key(public_key: str) -> str:
-#     # 压缩公钥
-#     public_key_bytes = bytes.fromhex(public_key)
-#     x = int.from_bytes(public_key_bytes[:32], 'big')
-#     y = int.from_bytes(public_key_bytes[32:], 'big')
-#     if y % 2 == 0:
-#         return '02' + x.to_bytes(32, 'big').hex()
-#     else:
-#         return '03' + x.to_bytes(32, 'big').hex()
-
-# def wallet_import_format_private_key(private_key: str) -> str:
-#     # 非压缩私钥
-#     private_key_bytes = bytes.fromhex(private_key)
-#     checksum = hashlib.sha256(hashlib.sha256(private_key_bytes).digest()).digest()[:4]
-#     bytes37 =  '80' + private_key_bytes.hex() + checksum.hex()
-#     return base58.b58encode(bytes.fromhex(bytes37)).decode()

@@ -4,8 +4,8 @@ from collections import namedtuple
 
 from typing import Optional
 
-UnspentTransaction = namedtuple('UnspentTransaction', ['transaction_hash', 'index', 'signature'])
-TransactionOutput = namedtuple('TransactionOutput', ['address', 'amount'])
+UnspentTransaction = namedtuple('UnspentTransaction', ['transaction_hash', 'index', 'public_key','signature'])
+TransactionOutput = namedtuple('TransactionOutput', ['public_key_hash','amount'])
 
 class Transaction:
 
@@ -224,12 +224,19 @@ class BlockChain:
     # 区块链，分布式网络的核心
 
     def __init__(self) -> None:
-        self._blocks = [Block(is_genius=True)]
+        genius_block = Block(is_genius=True)
+        self._blocks = [genius_block]
+        self._hash2block = {genius_block.hash:genius_block}
+        self._hash2transaction = {}
     
     def add_block(self, transactions: list[Transaction]) -> bool:
         new_block = Block(self.last_block, transactions)
         self._blocks.append(new_block)
+        self._hash2block[new_block.hash] = new_block
         return True
+
+    def get_transaction(self,transaction_hash):
+        return self._blocks.get_transaction(transaction_hash)
     
     @property
     def last_block(self):
@@ -243,10 +250,24 @@ class BlockChain:
             block.show()
     
     def verify_transaction(self, transaction: Transaction):
+        # 如何校验交易合法性
+        # 1. 为交易涉及的输入USTX提供使用人的公钥与对该交易使用私钥产生的签名
+        #  1.1 计算公钥hash是否等于USTX中的公钥hash（地址）
+        #  1.2 使用公钥解密签名，得到交易hash，与交易hash是否相等
         for unspent_transaction in self.unspent_transactions:
-            # tx_hash index signature
-            # tx = xxx(tx_hash)
-            # tx.outputs[index].verify(signature)
-            # I forget how to verify!
+            transaction_hash = unspent_transaction.transaction_hash
+            transaction_index = unspent_transaction.transaction_index
+            public_key : PublicKey= unspent_transaction.public_key
+            signature = unspent_transaction.signature
+            # 校验公钥哈希
+            input_transaction: TransactionOutput = get_transaction(transaction_hash).out_put[transaction_index]
+            if input_transaction.public_key_hash != public_key.hash():
+                return False
+            if not public_key.verify(message=transaction_hash,signature=signature):
+                return False
+        return True
+
+
+
 
 
