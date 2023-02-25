@@ -9,7 +9,14 @@ TransactionOutput = namedtuple('TransactionOutput', ['public_key_hash','amount']
 
 class Transaction:
 
-    def __init__(self, input: list[UnspentTransaction], output: list[TransactionOutput]) -> None:
+    def __init__(self, input: list[UnspentTransaction], output: list[TransactionOutput], is_block_reward=False) -> None:
+        if is_block_reward:
+            self._input = []
+            self._output = []
+            self._in_size = 0
+            self._out_size = len(output)
+            self._hash = self.calculate_hash()
+            return
         self._input = input
         self._output = output
         self._in_size = len(input)
@@ -34,20 +41,14 @@ class Transaction:
     @property
     def hash(self):
         return self._hash
+
+    @property
+    def input_amount(self):
+        return sum([unspent_transaction.amount for unspent_transaction in self._input])
     
-    def show(self):
-        print('-'*10, 'Transaction', '-'*10)
-        print('Transaction Hash:', self._hash)
-        print('Input:')
-        for unspent_transaction in self._input:
-            print('Transaction Hash:', unspent_transaction.transaction_hash)
-            print('Index:', unspent_transaction.index)
-            print('Signature:', unspent_transaction.signature)
-        print('Output:')
-        for transaction_output in self._output:
-            print('Address:', transaction_output.address)
-            print('Amount:', transaction_output.amount)
-        print("-"*20)
+    @property
+    def output_amount(self):
+        return sum([transaction_output.amount for transaction_output in self._output])
 
 class TransactionPool:
     # 有序的交易池
@@ -186,16 +187,6 @@ class Block:
     def calculate_hash(self):
         return hashlib.sha3_256(json.dumps(self.hash_content()).encode()).hexdigest()
     
-    def show(self):
-        print('-'*10, 'Block', '-'*10)
-        print('previous_block_hash:', self._previous_block_hash)
-        print('nonce:', hex(self._nonce))
-        print('difficulty:', '0x' + self._difficulty*'0' + 'f'*(64-self._difficulty) )
-        print('merkle_root:', self._merkle_tree.root)
-        print('timestamp:', self._timestamp)
-        print('hash:', self._hash)
-        print('-'*20)
-    
     def verify(self):
         if self.is_genius():
             return True
@@ -228,12 +219,17 @@ class BlockChain:
         self._blocks = [genius_block]
         self._hash2block = {genius_block.hash:genius_block}
         self._hash2transaction = {}
+        self.transaction_pool = TransactionPool()
     
-    def add_block(self, transactions: list[Transaction]) -> bool:
-        new_block = Block(self.last_block, transactions)
-        self._blocks.append(new_block)
-        self._hash2block[new_block.hash] = new_block
-        return True
+    def add_block(self, block: Block) -> bool:
+        # 添加区块
+        # 1. 验证交易合法性
+        # 2. 验证区块合法性
+        for transaction in block.transactions:
+            if not self.verify_transaction(transaction):
+                return False
+        if not block.verify():
+            return False
 
     def get_transaction(self,transaction_hash):
         return self._blocks.get_transaction(transaction_hash)
@@ -254,18 +250,34 @@ class BlockChain:
         # 1. 为交易涉及的输入USTX提供使用人的公钥与对该交易使用私钥产生的签名
         #  1.1 计算公钥hash是否等于USTX中的公钥hash（地址）
         #  1.2 使用公钥解密签名，得到交易hash，与交易hash是否相等
+        # 2. 交易hash是否等于交易中的交易hash
+        # 3. 数额自洽
         for unspent_transaction in self.unspent_transactions:
             transaction_hash = unspent_transaction.transaction_hash
             transaction_index = unspent_transaction.transaction_index
             public_key : PublicKey= unspent_transaction.public_key
             signature = unspent_transaction.signature
             # 校验公钥哈希
-            input_transaction: TransactionOutput = get_transaction(transaction_hash).out_put[transaction_index]
+            input_transaction: TransactionOutput = self.get_transaction(transaction_hash).out_put[transaction_index]
             if input_transaction.public_key_hash != public_key.hash():
                 return False
             if not public_key.verify(message=transaction_hash,signature=signature):
                 return False
-        return True
+        if transaction.hash != transaction.calculate_hash():
+            return False
+        return transaction.input_amount == transaction.output_amount
+    
+    def verify_block_header(self, block: Block):
+        # 哈希值是否正确，以及难度是否满足
+        return block.hash == block.calculate_hash() and block.hash.startswith('0' * block.difficulty)
+
+    def verify_block(self, block: Block):
+        # 1. 验证交易
+        # 2. 验证区块头
+        for transaction in block.transactions:
+            if not self.verify_transaction(transaction):
+                return False
+        return self.verify_block_header(block)
 
 
 

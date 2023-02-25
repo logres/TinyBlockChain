@@ -2,8 +2,6 @@ from source.my_cryptography import PrivateKey, PublicKey, Address, generate_key_
 
 def test_toString_and_fromString():
     private_key,public_key = generate_key_pair()
-    print(private_key.private_key)
-    print(public_key.public_key)
     private_key_string = private_key.private_key
     public_key_string = public_key.public_key
     private_key2 = PrivateKey(private_key_string)
@@ -29,4 +27,4 @@ def test_get_public_key_from_private_key():
 def test_translate_between_address_and_public_key_hash():
     private_key,public_key = generate_key_pair()
     address = public_key.to_address()
-    assert address.to_public_key_hash() == public_key.public_key_hash()
+    assert address.public_key_hash == public_key.public_key_hash
