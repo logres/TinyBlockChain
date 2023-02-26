@@ -1,6 +1,5 @@
 from .blockchain import BlockChain, Block, Transaction, TransactionPool
-import asyncio, threading
-from .my_cryptography import PrivateKey, PublicKey, Address, generate_key_pair
+from .my_cryptography import generate_key_pair
 
 class Node:
     # 区块链节点功能分为两个部分：
@@ -21,45 +20,3 @@ class Node:
 
     def verify():
         return True
-
-
-    # def ui_task(self):
-    #     while True:
-    #         _input = input(self.address.address+"\n"+"Input Command: ")
-    #         if _input.startswith('transaction'):
-    #             round = int(_input.split(" ")[1]) if len(_input.split(" ")) > 1 else 1
-    #             for _ in range(round):
-    #                 transaction = Transaction([],[])
-    #                 self.transaction_pool.add_transaction(transaction)
-    #             # self.broadcast_transaction()
-    #         elif _input.startswith('check'):
-    #             content = _input.split(" ")[1] if len(_input.split(" ")) > 1 else 'blockchain'
-    #             if content == 'blockchain':
-    #                 self.blockchain.show()
-    #             elif content == 'transaction':
-    #                 self.transaction_pool.show()
-
-    # async def mine_task(self):
-    #     while True:
-    #         if len(self.transaction_pool.get_transactions()) >= 10:
-    #             print("new Block")
-    #             block = self.construct_block()
-    #             self.blockchain.add_block(block)
-    #             # await self.broadcast_block()
-    #             self.transaction_pool.update(block)
-    #         await asyncio.sleep(1)
-
-    # def background_task(self):
-    #     event_loop = asyncio.new_event_loop()
-    #     # event_loop.create_task(self.listen_task())
-    #     event_loop.create_task(self.mine_task())
-    #     event_loop.run_forever()
-
-    # def run(self):
-    #     # TODO: 启动节点
-    #     # 启用一个线程以asyncio执行监听与打包
-    #     background_thread = threading.Thread(target=self.background_task)
-    #     background_thread.setDaemon(True)
-    #     background_thread.start()
-    #     # 在主线程中进行UI操作、发起交易等操作
-    #     self.ui_task()

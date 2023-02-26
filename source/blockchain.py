@@ -7,14 +7,23 @@ from typing import Optional
 UnspentTransaction = namedtuple('UnspentTransaction', ['transaction_hash', 'index', 'public_key','signature'])
 TransactionOutput = namedtuple('TransactionOutput', ['public_key_hash','amount'])
 
+import json
+
+with open('default_user.json','r',encoding='utf-8') as f:
+    default_users = json.load(f) 
+
+
 class Transaction:
 
     def __init__(self, input: list[UnspentTransaction], output: list[TransactionOutput], is_block_reward=False) -> None:
         if is_block_reward:
-            self._input = []
-            self._output = []
-            self._in_size = 0
-            self._out_size = len(output)
+            user = default_users['0']
+            user_public_key = PublicKey(user['public_key'])
+            user_private_key = PrivateKey(user['private_key'])
+            self._input = [UnspentTransaction('0'*64,0,user_public_key.public_key,user_private_key.sign(bytes.fromhex('0'*64)))] # 对啥玩意签名来着？
+            self._output = [TransactionOutput(user_public_key.public_key_hash,10)]
+            self._in_size = len(self._input)
+            self._out_size = len(self._output)
             self._hash = self.calculate_hash()
             return
         self._input = input
@@ -27,8 +36,8 @@ class Transaction:
         return {
             'in_size': self._in_size,
             'out_size': self._out_size,
-            'input': [(unspent_transaction.transaction_hash,unspent_transaction.index,unspent_transaction.signature) for unspent_transaction in self._input],
-            'output': [(transaction_output.address, transaction_output.amount) for transaction_output in self._output]
+            'input': [(unspent_transaction.transaction_hash,unspent_transaction.index,unspent_transaction.public_key,unspent_transaction.signature.hex()) for unspent_transaction in self._input],
+            'output': [(transaction_output.public_key_hash, transaction_output.amount) for transaction_output in self._output]
         }
     
     def verify(self):
@@ -41,10 +50,6 @@ class Transaction:
     @property
     def hash(self):
         return self._hash
-
-    @property
-    def input_amount(self):
-        return sum([unspent_transaction.amount for unspent_transaction in self._input])
     
     @property
     def output_amount(self):
@@ -215,12 +220,20 @@ class BlockChain:
     # 区块链，分布式网络的核心
 
     def __init__(self) -> None:
-        genius_block = Block(is_genius=True)
+        genius_block = Block(transactions=[Transaction([],[],is_block_reward=True)],is_genius=True)
         self._blocks = [genius_block]
         self._hash2block = {genius_block.hash:genius_block}
-        self._hash2transaction = {}
+        self._hash2transaction = {genius_block.transactions[0].hash:genius_block.transactions[0]}
         self.transaction_pool = TransactionPool()
+
+        # 判断花费与否
+        self.unspent_transaction_outputs_with_pool = set()
+        self.unspent_transaction_outputs = set()
     
+    def add_transaction(self, transaction: Transaction)->bool:
+        return True
+
+
     def add_block(self, block: Block) -> bool:
         # 添加区块
         # 1. 验证交易合法性
@@ -230,10 +243,23 @@ class BlockChain:
                 return False
         if not block.verify():
             return False
+        # self.remove_unspent_transaction_output(block)
+        self._blocks.append(block)
+        print("Block_added")
+        return True
+
+    def remove_unspent_transaction_output(self, block: Block):
+        # 移除区块中的UTXO
+        for transaction in block.transactions:
+            for transaction_output in transaction.outputs:
+                self.unspent_transaction_outputs.remove(transaction_output)
 
     def get_transaction(self,transaction_hash):
-        return self._blocks.get_transaction(transaction_hash)
+        return self._hash2transaction[transaction_hash]
     
+    def get_block(self,block_hash):
+        return self._hash2block[block_hash]
+
     @property
     def last_block(self):
         return self._blocks[-1]
@@ -241,34 +267,43 @@ class BlockChain:
     def __len__(self):
         return len(self._blocks)
 
-    def show(self):
-        for block in self._blocks:
-            block.show()
-    
     def verify_transaction(self, transaction: Transaction):
+        if transaction.hash == '0'*64: # 币基交易，挖矿奖励
+            return True
         # 如何校验交易合法性
-        # 1. 为交易涉及的输入USTX提供使用人的公钥与对该交易使用私钥产生的签名
-        #  1.1 计算公钥hash是否等于USTX中的公钥hash（地址）
+        # 1. 为交易涉及的输入UTXO提供使用人的公钥与对该交易使用私钥产生的签名
+        #  1.0 UTXO还未被花费
+        #  1.1 计算公钥hash是否等于UTXO中的公钥hash（地址）
         #  1.2 使用公钥解密签名，得到交易hash，与交易hash是否相等
         # 2. 交易hash是否等于交易中的交易hash
         # 3. 数额自洽
-        for unspent_transaction in self.unspent_transactions:
+        print("verifying transactions!")
+        for unspent_transaction in transaction._input:
             transaction_hash = unspent_transaction.transaction_hash
-            transaction_index = unspent_transaction.transaction_index
-            public_key : PublicKey= unspent_transaction.public_key
+            # if  transaction_hash not in self.unspent_transaction_outputs:
+            #     return False
+            transaction_index = unspent_transaction.index
+            public_key : PublicKey= PublicKey(unspent_transaction.public_key)
             signature = unspent_transaction.signature
             # 校验公钥哈希
-            input_transaction: TransactionOutput = self.get_transaction(transaction_hash).out_put[transaction_index]
-            if input_transaction.public_key_hash != public_key.hash():
+            input_transaction: TransactionOutput = self.get_transaction(transaction_hash)._output[transaction_index]
+            if input_transaction.public_key_hash != public_key.public_key_hash:
                 return False
-            if not public_key.verify(message=transaction_hash,signature=signature):
+            if not public_key.verify(message=bytes.fromhex(transaction_hash),signature=signature):
                 return False
+        print("unlock!")
         if transaction.hash != transaction.calculate_hash():
             return False
-        return transaction.input_amount == transaction.output_amount
+        
+        input_amount = sum(self.get_transaction(unspent_transaction.transaction_hash)._output[unspent_transaction.index].amount for unspent_transaction in transaction._input)
+
+        return input_amount == transaction.output_amount
     
     def verify_block_header(self, block: Block):
+        # 验证前一个区块为当前链的最后一个区块
         # 哈希值是否正确，以及难度是否满足
+        if block._previous_block_hash != self.last_block.hash:
+            return False
         return block.hash == block.calculate_hash() and block.hash.startswith('0' * block.difficulty)
 
     def verify_block(self, block: Block):
@@ -278,8 +313,3 @@ class BlockChain:
             if not self.verify_transaction(transaction):
                 return False
         return self.verify_block_header(block)
-
-
-
-
-

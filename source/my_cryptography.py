@@ -8,6 +8,14 @@ import hashlib
 
 # 字符串与bytes管理 注意，不使用0x前缀
 
+def hash160(data: bytes) -> bytes:
+    # 先计算SHA256 再计算RIPEMD160
+    return hashlib.new('ripemd160', hashlib.sha256(data).digest()).digest()
+
+def hash256(data: bytes) -> bytes:
+    # 计算两遍SHA256
+    return hashlib.sha256(hashlib.sha256(data).digest()).digest()
+
 class PublicKey:
 
     def __init__(self, public_key: str) -> None:
@@ -32,11 +40,7 @@ class PublicKey:
 
     @property
     def public_key_hash(self) -> str:
-        # 先计算SHA256 再计算RIPEMD160
-        public_key_bytes = bytes.fromhex(self.public_key)
-        sha256 = hashlib.sha256(public_key_bytes).digest()
-        ripemd160 = hashlib.new('ripemd160', sha256).digest()
-        return ripemd160.hex()
+        return hash160(bytes.fromhex(self.public_key)).hex()
 
     def verify(self, message: bytes, signature: bytes) -> bool:
         return self._public_key.verify(signature, message)
@@ -45,7 +49,7 @@ class PublicKey:
         # 生成地址 1+20+4
         public_key_hash_byte = bytes.fromhex(self.public_key_hash)
         prefix = b'\x00'
-        checksum = hashlib.sha256(hashlib.sha256(prefix + public_key_hash_byte).digest()).digest()[:4]
+        checksum = hash256(prefix + public_key_hash_byte)[:4]
         return Address((prefix + public_key_hash_byte + checksum).hex())
 
 class Address:
@@ -61,15 +65,15 @@ class Address:
     @property
     def public_key_hash(self) -> str:
         # 地址转公钥hash
-        return bytes.fromhex(self._address)[1:-4].hex()
+        address_bytes = bytes.fromhex(self._address)
+        return address_bytes[1:-4].hex()
     
     def is_valid(self) -> bool:
         # 验证地址是否有效
         address_bytes = bytes.fromhex(self._address)
-        prefix = address_bytes[:1]
-        public_key_hash = address_bytes[1:-4]
-        checksum = address_bytes[-4:]
-        return hashlib.sha256(hashlib.sha256(prefix + public_key_hash).digest()).digest()[:4] == checksum
+        prefix = b'\x00'
+        checksum = hash256(prefix + address_bytes[1:-4])[:4]
+        return checksum == address_bytes[-4:]
 
 
 class PrivateKey:

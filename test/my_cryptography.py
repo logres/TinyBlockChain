@@ -1,4 +1,10 @@
-from source.my_cryptography import PrivateKey, PublicKey, Address, generate_key_pair
+from source.my_cryptography import PrivateKey, PublicKey, Address, generate_key_pair, base58_decode, base58_encode, hash160
+
+def test_base58():
+    message = "Hello!"
+    encoded = base58_encode(message.encode())
+    decoded = base58_decode(encoded).decode()
+    assert message == decoded
 
 def test_toString_and_fromString():
     private_key,public_key = generate_key_pair()
@@ -27,4 +33,6 @@ def test_get_public_key_from_private_key():
 def test_translate_between_address_and_public_key_hash():
     private_key,public_key = generate_key_pair()
     address = public_key.to_address()
+    print(public_key.public_key)
+    print(hash160(bytes.fromhex(public_key.public_key)).hex())
     assert address.public_key_hash == public_key.public_key_hash
